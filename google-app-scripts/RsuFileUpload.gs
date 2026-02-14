@@ -41,16 +41,56 @@ function writeDataToSheet(reportObject) {
     throw new Error('Sheet with name "' + sheetName + '" not found.');
   }
 
+  // Read existing data to detect duplicates
+  const existingData = sheet.getDataRange().getValues();
+  const existingKeys = new Set();
+  for (let i = 1; i < existingData.length; i++) {
+    const row = existingData[i];
+    if (!row[FIFO_COL.symbol.index]) break;
+    const dateValue = row[FIFO_COL.transactionDate.index];
+    const dateKey = dateValue instanceof Date
+      ? dateValue.getFullYear() + '-' + (dateValue.getMonth() + 1) + '-' + dateValue.getDate()
+      : String(dateValue);
+    const key = [
+      row[FIFO_COL.symbol.index],
+      dateKey,
+      row[FIFO_COL.count.index],
+      row[FIFO_COL.price.index],
+      row[FIFO_COL.currency.index]
+    ].join('|');
+    existingKeys.add(key);
+  }
+
+  // Filter out duplicates
+  const newRows = reportObject.filter(function(reportRow) {
+    const parsedDate = new Date(reportRow.saleDate);
+    const dateKey = parsedDate.getFullYear() + '-' + (parsedDate.getMonth() + 1) + '-' + parsedDate.getDate();
+    const key = [
+      RSU_SYMBOL,
+      dateKey,
+      reportRow.sharesSold,
+      reportRow.salePrice.amount,
+      reportRow.salePrice.currency
+    ].join('|');
+    return !existingKeys.has(key);
+  });
+
+  if (newRows.length === 0) {
+    Logger.log('No new transactions to add (all duplicates).');
+    return;
+  }
+
   // Find the first empty row in column B
   let filledRowsCount = 1;
   while (sheet.getRange('B' + filledRowsCount).getValue() && filledRowsCount < 10000) {
     filledRowsCount++;
   }
-  Logger.log('First empty row: ' + filledRowsCount);
 
-  for (let i = 0; i < reportObject.length; i++) {
+  Logger.log('Adding ' + newRows.length + ' new transactions (skipped ' + (reportObject.length - newRows.length) + ' duplicates).');
+
+  for (let i = 0; i < newRows.length; i++) {
     const row = filledRowsCount + i;
-    const reportRow = reportObject[i];
+    const reportRow = newRows[i];
     const totalFees = reportRow.brokerageCommission.amount + reportRow.supplementalTransactionFee.amount;
 
     sheet.getRange('B' + row).setValue(RSU_SYMBOL);
