@@ -8,7 +8,19 @@ var CALC_LOG_SHEET_NAME = 'Calculation Log';
 
 // Operation types
 var BUY_OPERATION = 'Kupowanie';
+var SELL_OPERATION = 'Sprzedaż';
+
+// RSU upload defaults
 var RSU_SYMBOL = 'TEAM';
+var RSU_STOCK_TYPE = 'Inna';
+var RSU_COUNTRY = 'Stany Zjednoczone Ameryki';
+
+// Report sheet cell positions
+var REPORT_CELLS = {
+  fifoRevenue: 'A4',       fifoCost: 'B4',
+  cryptoRevenue: 'D4',     cryptoCost: 'E4',
+  dividendsRevenue: 'G4',  dividendsCost: 'H4'
+};
 
 // Column mappings for batch-read arrays (.index) and getRange calls (.letter).
 // Usage: row[FIFO_COL.currency.index] or sheet.getRange(FIFO_COL.currency.letter + row)

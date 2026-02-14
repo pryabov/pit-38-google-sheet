@@ -7,10 +7,11 @@
  */
 function processFile(fileName, base64Data) {
   try {
+    Logger.log('Processing file: ' + fileName);
     const reportObject = buildReportForRsuShareworks(base64Data);
     return writeDataToSheet(reportObject);
   } catch (error) {
-    Logger.log('Error processing file: ' + error.toString());
+    Logger.log('Error processing file ' + fileName + ': ' + error.toString());
     throw new Error('Failed to process file: ' + error.toString());
   }
 }
@@ -81,32 +82,41 @@ function writeDataToSheet(reportObject) {
     return 'No new transactions added (' + skippedCount + ' duplicates skipped).';
   }
 
-  // Find the first empty row in column B
-  let filledRowsCount = 1;
-  while (sheet.getRange('B' + filledRowsCount).getValue() && filledRowsCount < 10000) {
-    filledRowsCount++;
+  // Derive first empty row from existing data
+  let firstEmptyRow = existingData.length;
+  for (let i = existingData.length - 1; i >= 1; i--) {
+    if (existingData[i][FIFO_COL.symbol.index]) break;
+    firstEmptyRow = i;
   }
+  firstEmptyRow++; // Convert to 1-based sheet row
 
   Logger.log('Adding ' + newRows.length + ' new transactions (skipped ' + skippedCount + ' duplicates).');
 
-  for (let i = 0; i < newRows.length; i++) {
-    const row = filledRowsCount + i;
-    const reportRow = newRows[i];
+  // Build batch data array (columns B through L = 11 columns)
+  const batchData = newRows.map(function(reportRow) {
     const totalFees = reportRow.brokerageCommission.amount + reportRow.supplementalTransactionFee.amount;
+    return [
+      RSU_SYMBOL,                    // B
+      RSU_STOCK_TYPE,                // C
+      RSU_COUNTRY,                   // D
+      SELL_OPERATION,                // E
+      reportRow.saleDate,            // F
+      reportRow.sharesSold,          // G
+      reportRow.salePrice.amount,    // H
+      '',                            // I (formula, set separately)
+      reportRow.salePrice.currency,  // J
+      totalFees,                     // K
+      reportRow.brokerageCommission.currency  // L
+    ];
+  });
 
-    sheet.getRange('B' + row).setValue(RSU_SYMBOL);
-    sheet.getRange('C' + row).setValue('Inna');
-    sheet.getRange('D' + row).setValue('Stany Zjednoczone Ameryki');
-    sheet.getRange('E' + row).setValue('Sprzedaż');
+  // Write all rows in a single batch call (columns B:L = columns 2-12)
+  sheet.getRange(firstEmptyRow, 2, batchData.length, batchData[0].length).setValues(batchData);
 
-    sheet.getRange('F' + row).setValue(reportRow.saleDate);
-    sheet.getRange('G' + row).setValue(reportRow.sharesSold);
-    sheet.getRange('H' + row).setValue(reportRow.salePrice.amount);
-    sheet.getRange('I' + row).setFormula('=G' + row + '*H' + row);
-    sheet.getRange('J' + row).setValue(reportRow.salePrice.currency);
-
-    sheet.getRange('K' + row).setValue(totalFees);
-    sheet.getRange('L' + row).setValue(reportRow.brokerageCommission.currency);
+  // Set formulas for column I (transactionSum = count * price)
+  for (let i = 0; i < newRows.length; i++) {
+    const rowNum = firstEmptyRow + i;
+    sheet.getRange('I' + rowNum).setFormula('=G' + rowNum + '*H' + rowNum);
   }
 
   return 'Added ' + newRows.length + ' transactions' + (skippedCount > 0 ? ' (' + skippedCount + ' duplicates skipped).' : '.');

@@ -149,8 +149,8 @@ function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
     });
   });
 
-  reportSheet.getRange('A4').setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
-  reportSheet.getRange('B4').setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
+  reportSheet.getRange(REPORT_CELLS.fifoRevenue).setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
+  reportSheet.getRange(REPORT_CELLS.fifoCost).setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
 }
 
 /**
@@ -198,8 +198,8 @@ function calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet) {
     }
   }
 
-  reportSheet.getRange('D4').setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
-  reportSheet.getRange('E4').setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
+  reportSheet.getRange(REPORT_CELLS.cryptoRevenue).setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
+  reportSheet.getRange(REPORT_CELLS.cryptoCost).setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
 }
 
 /**
@@ -239,8 +239,8 @@ function calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet) 
     }
   }
 
-  reportSheet.getRange('G4').setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
-  reportSheet.getRange('H4').setFormula(`=ROUND(${totalTransactionsCostAccumulated}, 2)`);
+  reportSheet.getRange(REPORT_CELLS.dividendsRevenue).setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
+  reportSheet.getRange(REPORT_CELLS.dividendsCost).setFormula(`=ROUND(${totalTransactionsCostAccumulated}, 2)`);
 }
 
 /**
@@ -267,15 +267,21 @@ function setPreviousWorkingDayRate() {
 function setPreviousWorkingDayWithParams(sheetName, nbpRates, col) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = spreadsheet.getSheetByName(sheetName);
+  const allData = sheet.getDataRange().getValues();
 
-  let rowNumber = 1;
-  let dateValue = sheet.getRange(`${col.transactionDate.letter}${rowNumber + 1}`).getValue();
+  // Collect updates to write in batch
+  const updates = [];
 
-  while (isValidDate(dateValue)) {
+  for (let i = 1; i < allData.length; i++) {
+    const row = allData[i];
+    const dateValue = row[col.transactionDate.index];
+    if (!isValidDate(dateValue)) break;
+
     const nbpRateDate = new Date(dateValue);
+    const existingNbpDate = row[col.nbpRateDate.index];
 
     // Use previous working day rate (per Polish tax law)
-    if (!sheet.getRange(`${col.nbpRateDate.letter}${rowNumber + 1}`).getValue()) {
+    if (!existingNbpDate) {
       nbpRateDate.setDate(nbpRateDate.getDate() - 1);
     }
 
@@ -287,24 +293,29 @@ function setPreviousWorkingDayWithParams(sheetName, nbpRates, col) {
 
     if (maxDepth > 0) {
       const formattedDate = formatDate(nbpRateDate);
-      const nbpRateUsd = sheet.getRange(`${col.currency.letter}${rowNumber + 1}`).getValue() === 'PLN' ? 1 : nbpRates.get(formattedDate).usd;
+      const currency = row[col.currency.index];
+      const rate = currency === 'PLN' ? 1 : nbpRates.get(formattedDate)[currency.toLowerCase()];
+      const rowNum = i + 1;
 
-      sheet.getRange(`${col.nbpRateDate.letter}${rowNumber + 1}`).setValue(nbpRateDate);
-      sheet.getRange(`${col.exchangeRate.letter}${rowNumber + 1}`).setValue(nbpRateUsd);
-
-      sheet.getRange(`${col.sumPLN.letter}${rowNumber + 1}`).setFormula(
-        `=${col.transactionSum.letter}${rowNumber + 1}*${col.exchangeRate.letter}${rowNumber + 1}`
-      );
-      sheet.getRange(`${col.costsPLN.letter}${rowNumber + 1}`).setFormula(
-        `=${col.costs.letter}${rowNumber + 1}*${col.exchangeRate.letter}${rowNumber + 1}`
-      );
+      updates.push({
+        rowNum: rowNum,
+        nbpRateDate: nbpRateDate,
+        rate: rate,
+        sumFormula: `=${col.transactionSum.letter}${rowNum}*${col.exchangeRate.letter}${rowNum}`,
+        costsFormula: `=${col.costs.letter}${rowNum}*${col.exchangeRate.letter}${rowNum}`
+      });
     } else {
-      Logger.log(`Issue with processing record: ${rowNumber}`);
+      Logger.log(`Issue with processing record: ${i}`);
     }
-
-    rowNumber++;
-    dateValue = sheet.getRange(`${col.transactionDate.letter}${rowNumber + 1}`).getValue();
   }
+
+  // Batch write all updates
+  updates.forEach(function(update) {
+    sheet.getRange(`${col.nbpRateDate.letter}${update.rowNum}`).setValue(update.nbpRateDate);
+    sheet.getRange(`${col.exchangeRate.letter}${update.rowNum}`).setValue(update.rate);
+    sheet.getRange(`${col.sumPLN.letter}${update.rowNum}`).setFormula(update.sumFormula);
+    sheet.getRange(`${col.costsPLN.letter}${update.rowNum}`).setFormula(update.costsFormula);
+  });
 }
 
 /**
