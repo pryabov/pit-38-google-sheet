@@ -17,25 +17,14 @@ function parseCSVData(base64Data) {
 }
 
 /**
- * Parses a CSV string into a 2D array, handling quoted fields with commas.
+ * Parses a CSV string into a 2D array using the built-in Utilities.parseCsv().
  * The first row (file title) is excluded from the result.
  *
  * @param {string} csvString - Raw CSV content.
  * @returns {string[][]} Parsed rows and columns.
  */
 function parseCSV(csvString) {
-  // Split the string into rows by new line
-  const rows = csvString.trim().split('\n');
-
-  const data = rows.map(function(row) {
-    // Use a regular expression to correctly split the row by commas
-    // while ignoring commas within quotes
-    const regex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
-    return row.split(regex).map(function(cell) {
-      // Remove any surrounding quotes and trim whitespace
-      return cell.trim().replace(/^"|"$/g, '');
-    });
-  });
+  const data = Utilities.parseCsv(csvString.trim());
   // Exclude the first row as it contains name of the file
   return data.slice(1);
 }
