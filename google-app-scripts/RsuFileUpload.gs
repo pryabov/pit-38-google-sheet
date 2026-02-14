@@ -1,6 +1,13 @@
+/**
+ * Processes an uploaded RSU Shareworks CSV file.
+ * Parses the base64-encoded CSV and writes transactions to the FIFO sheet.
+ *
+ * @param {string} fileName - Original filename (for logging).
+ * @param {string} base64Data - Base64-encoded CSV file content.
+ */
 function processFile(fileName, base64Data) {
   try {
-    var reportObject = buildReportForRsuShareworks(base64Data);
+    const reportObject = buildReportForRsuShareworks(base64Data);
 
     writeDataToSheet(reportObject);
   } catch (error) {
@@ -9,37 +16,44 @@ function processFile(fileName, base64Data) {
   }
 }
 
+/**
+ * Opens a modal dialog for uploading an RSU report CSV file.
+ */
 function showUploadReportDialog() {
-    // Create the HTML output from the file
   const htmlOutput = HtmlService.createHtmlOutputFromFile('UploadReport.html')
-    .setWidth(400)  // Set the width of the dialog
-    .setHeight(300); // Set the height of the dialog
-  // Show the modal dialog with a custom title
+    .setWidth(400)
+    .setHeight(300);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Upload RSU Shareworks Report CSV');
 }
 
+/**
+ * Writes parsed RSU transaction data to the FIFO Stocks Transactions sheet.
+ * Appends rows starting from the first empty row in column B.
+ *
+ * @param {Object[]} reportObject - Array of parsed transaction objects from buildReportForRsuShareworks.
+ */
 function writeDataToSheet(reportObject) {
-  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetName = FIFO_SHEET_NAME;
-  var sheet = spreadsheet.getSheetByName(sheetName);
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetName = FIFO_SHEET_NAME;
+  const sheet = spreadsheet.getSheetByName(sheetName);
 
   if (!sheet) {
     throw new Error('Sheet with name "' + sheetName + '" not found.');
   }
 
   // Find the first empty row in column B
-  var filledRowsCount = 1;
+  let filledRowsCount = 1;
   while (sheet.getRange('B' + filledRowsCount).getValue() && filledRowsCount < 10000) {
     filledRowsCount++;
   }
   Logger.log('First empty row: ' + filledRowsCount);
 
-  for (var i = 0; i < reportObject.length; i++) {
-    var row = filledRowsCount + i;
-    var reportRow = reportObject[i];
-    var totalFees = reportRow.brokerageCommission.amount + reportRow.supplementalTransactionFee.amount;
+  for (let i = 0; i < reportObject.length; i++) {
+    const row = filledRowsCount + i;
+    const reportRow = reportObject[i];
+    const totalFees = reportRow.brokerageCommission.amount + reportRow.supplementalTransactionFee.amount;
 
-    sheet.getRange('B' + row).setValue('TEAM');
+    sheet.getRange('B' + row).setValue(RSU_SYMBOL);
     sheet.getRange('C' + row).setValue('Inna');
     sheet.getRange('D' + row).setValue('Stany Zjednoczone Ameryki');
     sheet.getRange('E' + row).setValue('Sprzedaż');

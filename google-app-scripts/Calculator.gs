@@ -1,285 +1,283 @@
+/**
+ * Main entry point for PIT-38 tax calculation.
+ * Fetches NBP exchange rates, then calculates FIFO stocks, crypto, and dividends
+ * for the year specified in the Settings sheet.
+ */
 function calculate() {
-  // SpreadsheetApp.getUi().alert('Calculation started. Pls, wait for the finish notification!');
-
   setPreviousWorkingDayRate();
 
-  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
 
-  var settingsSheet = spreadsheet.getSheetByName(SETTINGS_SHEET_NAME);
-  var calculationYear = +settingsSheet.getRange('B2').getValue();
+  const settingsSheet = spreadsheet.getSheetByName(SETTINGS_SHEET_NAME);
+  const calculationYear = +settingsSheet.getRange('B2').getValue();
 
-  var calcLog = [];
+  const reportSheet = spreadsheet.getSheetByName(REPORT_SHEET_NAME) || spreadsheet.insertSheet(REPORT_SHEET_NAME);
 
-  calculateFifo(spreadsheet, calculationYear, calcLog);
-  calculateCrypto(spreadsheet, calculationYear, calcLog);
-  calculateDividends(spreadsheet, calculationYear, calcLog);
+  const calcLog = [];
+
+  calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet);
+  calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet);
+  calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet);
 
   processCalcLog(spreadsheet, calcLog);
 
-  SpreadsheetApp.getUi().alert('Calculation finished')
+  SpreadsheetApp.getUi().alert('Calculation finished');
 }
 
+/**
+ * Writes calculation log entries to the console and to a dedicated sheet.
+ *
+ * @param {Spreadsheet} spreadsheet - The active spreadsheet.
+ * @param {string[]} calcLog - Array of log messages to output.
+ */
 function processCalcLog(spreadsheet, calcLog) {
   calcLog.forEach(logEntry => {
     console.log(logEntry);
   });
 
   if (calcLog.length > 0) {
-    var logSheet = spreadsheet.getSheetByName(CALC_LOG_SHEET_NAME) || spreadsheet.insertSheet(CALC_LOG_SHEET_NAME);
+    const logSheet = spreadsheet.getSheetByName(CALC_LOG_SHEET_NAME) || spreadsheet.insertSheet(CALC_LOG_SHEET_NAME);
     logSheet.clear();
     logSheet.getRange(1, 1, calcLog.length, 1).setValues(calcLog.map(entry => [entry]));
   }
 }
 
-function calculateFifo(spreadsheet, calculationYear, calcLog) {
-  var sheet = spreadsheet.getSheetByName(FIFO_SHEET_NAME);
+/**
+ * Calculates FIFO-based gains/losses for stock transactions.
+ * Loads all transactions up to calculationYear to build the buy queue,
+ * but only accumulates revenue/cost for sells in the calculation year.
+ */
+function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
+  const sheet = spreadsheet.getSheetByName(FIFO_SHEET_NAME);
+  const allData = sheet.getDataRange().getValues();
+  const inMemoryFifo = new Map();
 
-  var inMemoryFifo = new Map();
+  // Phase 1: Data Loading (batch read)
+  for (let i = 1; i < allData.length; i++) {
+    const row = allData[i];
+    const currentSymbol = row[FIFO_COL.symbol.index];
+    if (!currentSymbol) break;
 
-  var totalRevenueAccumulated = 0;
-  var totalCostAccumulated = 0;
-  var totalTransactionsCostAccumulated = 0;
-
-  var i = 2;
-  var currentSymbol = sheet.getRange(`B${i}`).getValue();
-
-  // Phase 1: Data Loading
-  while (currentSymbol) {
-    var transactionDate = new Date(sheet.getRange(`F${i}`).getValue());
-    // Extract the year from the transactionDate
-    var transactionYear = transactionDate.getFullYear();
+    const transactionDate = new Date(row[FIFO_COL.transactionDate.index]);
+    const transactionYear = transactionDate.getFullYear();
 
     if (transactionYear <= calculationYear) {
-        var transaction = {
-          date: transactionDate,
-          operationType: sheet.getRange(`E${i}`).getValue() === BUY_OPERATION ? 'Buy' : 'Sell',
-          count: sheet.getRange(`G${i}`).getValue(),
-          price: sheet.getRange(`H${i}`).getValue(),
-          currency: sheet.getRange(`J${i}`).getValue(),
-          costs: sheet.getRange(`K${i}`).getValue(),
-          exchangeRate: sheet.getRange(`N${i}`).getValue()
-        };
+      const transaction = {
+        date: transactionDate,
+        operationType: row[FIFO_COL.operationType.index] === BUY_OPERATION ? 'Buy' : 'Sell',
+        count: row[FIFO_COL.count.index],
+        price: row[FIFO_COL.price.index],
+        currency: row[FIFO_COL.currency.index],
+        costs: row[FIFO_COL.costs.index],
+        exchangeRate: row[FIFO_COL.exchangeRate.index]
+      };
 
-        if (!inMemoryFifo.has(currentSymbol)) {
-          inMemoryFifo.set(currentSymbol, []);
-        }
-
-        inMemoryFifo.get(currentSymbol).push(transaction);
+      if (!inMemoryFifo.has(currentSymbol)) {
+        inMemoryFifo.set(currentSymbol, []);
+      }
+      inMemoryFifo.get(currentSymbol).push(transaction);
     }
-
-    i++;
-    currentSymbol = sheet.getRange(`B${i}`).getValue();
   }
 
   // Phase 2: Sorting
-  inMemoryFifo.forEach((transactions, symbol) => {
+  inMemoryFifo.forEach((transactions) => {
     transactions.sort((a, b) => a.date - b.date);
   });
 
-  // Phase 3: Calculation
+  // Phase 3: FIFO Calculation
+  let totalRevenueAccumulated = 0;
+  let totalCostAccumulated = 0;
+  let totalTransactionsCostAccumulated = 0;
+
   inMemoryFifo.forEach((transactions, symbol) => {
-    var buyQueue = [];
+    const buyQueue = [];
 
     transactions.forEach(transaction => {
       if (transaction.operationType === 'Buy') {
         buyQueue.push({ ...transaction });
       } else if (transaction.operationType === 'Sell') {
-        var remainingToSell = transaction.count;
-        var totalCost = 0;
-        var totalTransactionCost = transaction.costs * transaction.exchangeRate;
-        var sellDetails = [];
+        let remainingToSell = transaction.count;
+        let totalCost = 0;
+        let totalTransactionCost = transaction.costs * transaction.exchangeRate;
+        const sellDetails = [];
 
         while (remainingToSell > 0 && buyQueue.length > 0) {
-          var buyTransaction = buyQueue[0];
+          const buyTransaction = buyQueue[0];
 
           if (buyTransaction.count <= remainingToSell) {
-            var cost = buyTransaction.count * buyTransaction.price * buyTransaction.exchangeRate;
+            const cost = buyTransaction.count * buyTransaction.price * buyTransaction.exchangeRate;
             totalCost += cost;
             totalTransactionCost += buyTransaction.costs * buyTransaction.exchangeRate;
 
             remainingToSell -= buyTransaction.count;
-            sellDetails.push(`Sold ${buyTransaction.count} shares bought on ${buyTransaction.date.toDateString()} at ${buyTransaction.price} ${buyTransaction.currency} (Cost: ${(cost).toFixed(2)} PLN, Transaction Cost: ${(buyTransaction.costs * buyTransaction.exchangeRate).toFixed(2)} PLN)`);
+            sellDetails.push(`Sold ${buyTransaction.count} shares bought on ${buyTransaction.date.toDateString()} at ${buyTransaction.price} ${buyTransaction.currency} (Cost: ${cost.toFixed(2)} PLN, Transaction Cost: ${(buyTransaction.costs * buyTransaction.exchangeRate).toFixed(2)} PLN)`);
             buyQueue.shift();
           } else {
-            var partialCost = remainingToSell * buyTransaction.price * buyTransaction.exchangeRate;
-            var transactionCost = (remainingToSell / buyTransaction.count) * buyTransaction.costs * buyTransaction.exchangeRate;
+            const partialCost = remainingToSell * buyTransaction.price * buyTransaction.exchangeRate;
+            const partialTransactionCost = (remainingToSell / buyTransaction.count) * buyTransaction.costs * buyTransaction.exchangeRate;
 
             totalCost += partialCost;
-            totalTransactionCost += transactionCost;
+            totalTransactionCost += partialTransactionCost;
 
-            sellDetails.push(`Sold ${remainingToSell} shares bought on ${buyTransaction.date.toDateString()} at ${buyTransaction.price} ${buyTransaction.currency} (Cost: ${(partialCost).toFixed(2)} PLN, Transaction Cost: ${(transactionCost).toFixed(2)} PLN)`);
+            sellDetails.push(`Sold ${remainingToSell} shares bought on ${buyTransaction.date.toDateString()} at ${buyTransaction.price} ${buyTransaction.currency} (Cost: ${partialCost.toFixed(2)} PLN, Transaction Cost: ${partialTransactionCost.toFixed(2)} PLN)`);
+
+            const originalCount = buyTransaction.count;
             buyTransaction.count -= remainingToSell;
-            buyTransaction.costs -= (remainingToSell / buyTransaction.count) * buyTransaction.costs;
+            buyTransaction.costs -= (remainingToSell / originalCount) * buyTransaction.costs;
             remainingToSell = 0;
           }
         }
 
-        var totalRevenue = transaction.count * transaction.price * transaction.exchangeRate;
-        var gainOrLoss = totalRevenue - totalCost - totalTransactionCost;
+        // Only accumulate for the calculation year
+        if (transaction.date.getFullYear() === calculationYear) {
+          const totalRevenue = transaction.count * transaction.price * transaction.exchangeRate;
+          const gainOrLoss = totalRevenue - totalCost - totalTransactionCost;
 
-        totalRevenueAccumulated += totalRevenue;
-        totalCostAccumulated += totalCost;
-        totalTransactionsCostAccumulated += totalTransactionCost;
+          totalRevenueAccumulated += totalRevenue;
+          totalCostAccumulated += totalCost;
+          totalTransactionsCostAccumulated += totalTransactionCost;
 
-        calcLog.push(`Sold ${transaction.count} shares of ${symbol} on ${transaction.date.toDateString()}:`);
-        calcLog.push(...sellDetails);
-        calcLog.push(`Total Revenue: ${totalRevenue.toFixed(2)} PLN`);
-        calcLog.push(`Total Cost: ${totalCost.toFixed(2)} PLN`);
-        calcLog.push(`Total Transaction Cost: ${totalTransactionCost.toFixed(2)} PLN`);
-        calcLog.push(`Gain/Loss: ${gainOrLoss.toFixed(2)} PLN`);
-        calcLog.push('---');
+          calcLog.push(`Sold ${transaction.count} shares of ${symbol} on ${transaction.date.toDateString()}:`);
+          calcLog.push(...sellDetails);
+          calcLog.push(`Total Revenue: ${totalRevenue.toFixed(2)} PLN`);
+          calcLog.push(`Total Cost: ${totalCost.toFixed(2)} PLN`);
+          calcLog.push(`Total Transaction Cost: ${totalTransactionCost.toFixed(2)} PLN`);
+          calcLog.push(`Gain/Loss: ${gainOrLoss.toFixed(2)} PLN`);
+          calcLog.push('---');
+        }
       }
     });
   });
 
-  var reportSheet = spreadsheet.getSheetByName(REPORT_SHEET_NAME) || spreadsheet.insertSheet(REPORT_SHEET_NAME);
   reportSheet.getRange('A4').setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
   reportSheet.getRange('B4').setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
 }
 
-function calculateCrypto(spreadsheet, calculationYear, calcLog) {
-  var sheet = spreadsheet.getSheetByName(CRYPTO_SHEET_NAME);
+/**
+ * Calculates crypto transaction totals for the given year.
+ * Revenue from sells and costs from buys are accumulated separately.
+ */
+function calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet) {
+  const sheet = spreadsheet.getSheetByName(CRYPTO_SHEET_NAME);
+  const allData = sheet.getDataRange().getValues();
+  let totalRevenueAccumulated = 0;
+  let totalCostAccumulated = 0;
+  let totalTransactionsCostAccumulated = 0;
 
-  var inMemoryCrypto = [];
+  for (let i = 1; i < allData.length; i++) {
+    const row = allData[i];
+    const transactionDate = new Date(row[CRYPTO_COL.transactionDate.index]);
+    if (!isValidDate(transactionDate)) break;
 
-  var totalRevenueAccumulated = 0;
-  var totalCostAccumulated = 0;
-  var totalTransactionsCostAccumulated = 0;
-
-  var i = 2;
-  var transactionDate = new Date(sheet.getRange(`F${i}`).getValue());
-
-  // Phase 1: Data Loading
-  while (isValidDate(transactionDate)) {
-    var transactionYear = transactionDate.getFullYear();
+    const transactionYear = transactionDate.getFullYear();
 
     if (transactionYear === calculationYear) {
-      var transaction = {
-        rowNumber: i,
-        date: transactionDate,
-        operationType: sheet.getRange(`E${i}`).getValue() === BUY_OPERATION ? 'Buy' : 'Sell',
-        amount: sheet.getRange(`I${i}`).getValue(),
-        currency: sheet.getRange(`J${i}`).getValue(),
-        costs: sheet.getRange(`K${i}`).getValue(),
-        exchangeRate: sheet.getRange(`N${i}`).getValue()
-      };
+      const operationType = row[CRYPTO_COL.operationType.index] === BUY_OPERATION ? 'Buy' : 'Sell';
+      const amount = row[CRYPTO_COL.transactionSum.index];
+      const currency = row[CRYPTO_COL.currency.index];
+      const costs = row[CRYPTO_COL.costs.index];
+      const exchangeRate = row[CRYPTO_COL.exchangeRate.index];
 
-      inMemoryCrypto.push(transaction);
+      const transactionCostPLN = costs * exchangeRate;
+      const amountPLN = amount * exchangeRate;
 
-      var transactionCostPLN = transaction.costs * transaction.exchangeRate;
-      var amountPLN = transaction.amount * transaction.exchangeRate;
-
-      if (transaction.operationType === 'Sell') {
+      if (operationType === 'Sell') {
         totalRevenueAccumulated += amountPLN;
-      } else if (transaction.operationType === 'Buy') {
+      } else if (operationType === 'Buy') {
         totalCostAccumulated += amountPLN;
       }
 
       totalTransactionsCostAccumulated += transactionCostPLN;
 
-      // Log the transaction details
-      calcLog.push(`Crypto Transaction ${transaction.operationType} ${transaction.amount} ${transaction.currency} on ${transaction.date.toDateString()}:`);
-      calcLog.push(`Amount: ${transaction.amount}`);
-      calcLog.push(`Exchange Rate: ${transaction.exchangeRate}`);
+      calcLog.push(`Crypto Transaction ${operationType} ${amount} ${currency} on ${transactionDate.toDateString()}:`);
+      calcLog.push(`Amount: ${amount}`);
+      calcLog.push(`Exchange Rate: ${exchangeRate}`);
       calcLog.push(`Transaction Cost: ${transactionCostPLN.toFixed(2)} PLN`);
       calcLog.push(`Total Revenue: ${amountPLN.toFixed(2)} PLN`);
       calcLog.push('---');
     }
-
-    i++;
-    transactionDate = new Date(sheet.getRange(`F${i}`).getValue());
   }
 
-  // Optionally, write the results to a sheet named 'Crypto Report'
-  var reportSheet = spreadsheet.getSheetByName(REPORT_SHEET_NAME) || spreadsheet.insertSheet(REPORT_SHEET_NAME);
   reportSheet.getRange('D4').setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
   reportSheet.getRange('E4').setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
 }
 
-function calculateDividends(spreadsheet, calculationYear, calcLog) {
-  var sheet = spreadsheet.getSheetByName(DIVIDENDS_SHEET_NAME);
+/**
+ * Calculates dividend totals for the given year.
+ */
+function calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet) {
+  const sheet = spreadsheet.getSheetByName(DIVIDENDS_SHEET_NAME);
+  const allData = sheet.getDataRange().getValues();
+  let totalRevenueAccumulated = 0;
+  let totalTransactionsCostAccumulated = 0;
 
-  var inMemoryDividends = [];
+  for (let i = 1; i < allData.length; i++) {
+    const row = allData[i];
+    const transactionDate = new Date(row[DIVIDENDS_COL.transactionDate.index]);
+    if (!isValidDate(transactionDate)) break;
 
-  var totalRevenueAccumulated = 0;
-  var totalTransactionsCostAccumulated = 0;
-
-  var i = 2;
-  var transactionDate = new Date(sheet.getRange(`E${i}`).getValue());
-
-  // Phase 1: Data Loading
-  while (isValidDate(transactionDate)) {
-    var transactionYear = transactionDate.getFullYear();
+    const transactionYear = transactionDate.getFullYear();
 
     if (transactionYear === calculationYear) {
-      var transaction = {
-        rowNumber: i,
-        date: transactionDate,
-        amount: sheet.getRange(`F${i}`).getValue(),
-        currency: sheet.getRange(`G${i}`).getValue(),
-        costs: sheet.getRange(`H${i}`).getValue(),
-        exchangeRate: sheet.getRange(`K${i}`).getValue()
-      };
+      const amount = row[DIVIDENDS_COL.transactionSum.index];
+      const currency = row[DIVIDENDS_COL.currency.index];
+      const costs = row[DIVIDENDS_COL.costs.index];
+      const exchangeRate = row[DIVIDENDS_COL.exchangeRate.index];
 
-      inMemoryDividends.push(transaction);
-
-      var transactionCostPLN = transaction.costs * transaction.exchangeRate;
-      var amountPLN = transaction.amount * transaction.exchangeRate;
+      const transactionCostPLN = costs * exchangeRate;
+      const amountPLN = amount * exchangeRate;
 
       totalRevenueAccumulated += amountPLN;
       totalTransactionsCostAccumulated += transactionCostPLN;
 
-      // Log the transaction details
-      calcLog.push(`Dividends Transaction ${transaction.amount} ${transaction.currency} on ${transaction.date.toDateString()}:`);
-      calcLog.push(`Amount: ${transaction.amount}`);
-      calcLog.push(`Exchange Rate: ${transaction.exchangeRate}`);
+      calcLog.push(`Dividends Transaction ${amount} ${currency} on ${transactionDate.toDateString()}:`);
+      calcLog.push(`Amount: ${amount}`);
+      calcLog.push(`Exchange Rate: ${exchangeRate}`);
       calcLog.push(`Transaction Cost: ${transactionCostPLN.toFixed(2)} PLN`);
       calcLog.push(`Total Revenue: ${amountPLN.toFixed(2)} PLN`);
       calcLog.push('---');
     }
-
-    i++;
-    transactionDate = new Date(sheet.getRange(`E${i}`).getValue());
   }
 
-  // Optionally, write the results to a sheet named 'Crypto Report'
-  var reportSheet = spreadsheet.getSheetByName(REPORT_SHEET_NAME) || spreadsheet.insertSheet(REPORT_SHEET_NAME);
   reportSheet.getRange('G4').setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
   reportSheet.getRange('H4').setFormula(`=ROUND(${totalTransactionsCostAccumulated}, 2)`);
 }
 
+/**
+ * Populates NBP exchange rates for all transaction sheets (FIFO, Crypto, Dividends).
+ * For each transaction, finds the previous working day's rate per Polish tax law.
+ */
 function setPreviousWorkingDayRate() {
   const nbpRates = getNbpRates();
 
-  setPreviousWorkingDayWithParams(FIFO_SHEET_NAME, nbpRates, 'F', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P');
-  setPreviousWorkingDayWithParams(CRYPTO_SHEET_NAME, nbpRates, 'F', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P');
-  setPreviousWorkingDayWithParams(DIVIDENDS_SHEET_NAME, nbpRates, 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M');
+  setPreviousWorkingDayWithParams(FIFO_SHEET_NAME, nbpRates, FIFO_COL);
+  setPreviousWorkingDayWithParams(CRYPTO_SHEET_NAME, nbpRates, CRYPTO_COL);
+  setPreviousWorkingDayWithParams(DIVIDENDS_SHEET_NAME, nbpRates, DIVIDENDS_COL);
 }
 
-function setPreviousWorkingDayWithParams(
-  sheetName,
-  nbpRates,
-  transactionDateColumn,
-  transactionSumColumn,
-  transactionCurrencyColumn,
-  transactionCommissionColumn,
-  transactionCommissionCurrencyColumn,
-  nbpRateDateColumn,
-  nbpRateValueColumn,
-  sumColumn,
-  sumCostsColumn
-) {
-  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = spreadsheet.getSheetByName(sheetName);
+/**
+ * Fills NBP exchange rate columns for each row in the given sheet.
+ * Looks up the previous working day rate from the NBP rates map and writes
+ * the rate date, rate value, and PLN-converted sum/cost formulas.
+ *
+ * @param {string} sheetName - Name of the sheet to process.
+ * @param {Map<string, Object>} nbpRates - Map of date strings to currency rate objects.
+ * @param {Object} col - Column map (e.g. FIFO_COL) with properties containing {index, letter}.
+ */
+function setPreviousWorkingDayWithParams(sheetName, nbpRates, col) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(sheetName);
 
   let rowNumber = 1;
-  let dateValue = sheet.getRange(`${transactionDateColumn}${rowNumber + 1}`).getValue();
+  let dateValue = sheet.getRange(`${col.transactionDate.letter}${rowNumber + 1}`).getValue();
 
   while (isValidDate(dateValue)) {
-    let nbpRateDate = new Date(dateValue);
+    const nbpRateDate = new Date(dateValue);
 
-    if (sheet.getRange(`${nbpRateDateColumn}${rowNumber + 1}`))
-    nbpRateDate.setDate(nbpRateDate.getDate() - 1);
+    // Use previous working day rate (per Polish tax law)
+    if (!sheet.getRange(`${col.nbpRateDate.letter}${rowNumber + 1}`).getValue()) {
+      nbpRateDate.setDate(nbpRateDate.getDate() - 1);
+    }
 
     let maxDepth = 9;
     while (!nbpRates.has(formatDate(nbpRateDate)) && maxDepth > 0) {
@@ -288,24 +286,24 @@ function setPreviousWorkingDayWithParams(
     }
 
     if (maxDepth > 0) {
-      let formattedDate = formatDate(nbpRateDate);
-      let nbpRateUsd = sheet.getRange(`${transactionCurrencyColumn}${rowNumber + 1}`).getValue() === 'PLN' ? 1 : nbpRates.get(formattedDate).usd;
+      const formattedDate = formatDate(nbpRateDate);
+      const nbpRateUsd = sheet.getRange(`${col.currency.letter}${rowNumber + 1}`).getValue() === 'PLN' ? 1 : nbpRates.get(formattedDate).usd;
 
-      sheet.getRange(`${nbpRateDateColumn}${rowNumber + 1}`).setValue(nbpRateDate);
-      sheet.getRange(`${nbpRateValueColumn}${rowNumber + 1}`).setValue(nbpRateUsd);
+      sheet.getRange(`${col.nbpRateDate.letter}${rowNumber + 1}`).setValue(nbpRateDate);
+      sheet.getRange(`${col.exchangeRate.letter}${rowNumber + 1}`).setValue(nbpRateUsd);
 
-      sheet.getRange(`${sumColumn}${rowNumber + 1}`).setFormula(
-        `=${transactionSumColumn}${rowNumber + 1}*${nbpRateValueColumn}${rowNumber + 1}`
+      sheet.getRange(`${col.sumPLN.letter}${rowNumber + 1}`).setFormula(
+        `=${col.transactionSum.letter}${rowNumber + 1}*${col.exchangeRate.letter}${rowNumber + 1}`
       );
-      sheet.getRange(`${sumCostsColumn}${rowNumber + 1}`).setFormula(
-        `=${transactionCommissionColumn}${rowNumber + 1}*${nbpRateValueColumn}${rowNumber + 1}`
+      sheet.getRange(`${col.costsPLN.letter}${rowNumber + 1}`).setFormula(
+        `=${col.costs.letter}${rowNumber + 1}*${col.exchangeRate.letter}${rowNumber + 1}`
       );
     } else {
       Logger.log(`Issue with processing record: ${rowNumber}`);
     }
 
     rowNumber++;
-    dateValue = sheet.getRange(`${transactionDateColumn}${rowNumber + 1}`).getValue();
+    dateValue = sheet.getRange(`${col.transactionDate.letter}${rowNumber + 1}`).getValue();
   }
 }
 

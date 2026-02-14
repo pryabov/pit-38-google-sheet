@@ -1,31 +1,36 @@
-var FIFO_SHEET_NAME = 'FIFO Stocks Transactions';
-var CRYPTO_SHEET_NAME = 'Crypto Currencies';
-var DIVIDENDS_SHEET_NAME = 'Dividends';
-var SETTINGS_SHEET_NAME = 'Settings';
-var REPORT_SHEET_NAME = 'Report';
-var CALC_LOG_SHEET_NAME = 'Calculation Log';
-var BUY_OPERATION = 'Kupowanie';
-
+/**
+ * Decodes a base64-encoded CSV string and parses it into a 2D array.
+ * The first row of the CSV (file title) is excluded.
+ *
+ * @param {string} base64Data - Base64-encoded CSV file content.
+ * @returns {string[][]} Parsed CSV data as a 2D array of strings.
+ */
 function parseCSVData(base64Data) {
   // Decode the base64 data
-  var decodedBytes = Utilities.base64Decode(base64Data);
-  var decodedString = Utilities.newBlob(decodedBytes).getDataAsString();
+  const decodedBytes = Utilities.base64Decode(base64Data);
+  const decodedString = Utilities.newBlob(decodedBytes).getDataAsString();
 
   // Parse the CSV data
-  var parsedData = parseCSV(decodedString);
+  const parsedData = parseCSV(decodedString);
 
   return parsedData;
 }
 
+/**
+ * Parses a CSV string into a 2D array, handling quoted fields with commas.
+ * The first row (file title) is excluded from the result.
+ *
+ * @param {string} csvString - Raw CSV content.
+ * @returns {string[][]} Parsed rows and columns.
+ */
 function parseCSV(csvString) {
   // Split the string into rows by new line
-  var rows = csvString.trim().split('\n');
-  // Split each row into columns
+  const rows = csvString.trim().split('\n');
 
-  var data = rows.map(function(row) {
+  const data = rows.map(function(row) {
     // Use a regular expression to correctly split the row by commas
     // while ignoring commas within quotes
-    var regex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
+    const regex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
     return row.split(regex).map(function(cell) {
       // Remove any surrounding quotes and trim whitespace
       return cell.trim().replace(/^"|"$/g, '');

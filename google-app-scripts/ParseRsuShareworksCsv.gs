@@ -5,29 +5,28 @@
  * The last row (summary/totals) is automatically excluded.
  *
  * @param {string} base64Data - Base64-encoded CSV file content.
- * @returns {Object[]} Array of transaction objects with: saleDate, originalAcquisitionDate,
- *   sharesSold, salePrice, originalCostBasis, brokerageCommission, supplementalTransactionFee,
- *   and withdrawalReferenceNumber.
+ * @returns {Object[]} Array of transaction objects with: saleDate, sharesSold,
+ *   salePrice, brokerageCommission, and supplementalTransactionFee.
  */
 function buildReportForRsuShareworks(base64Data) {
-  var data = parseCSVData(base64Data);
+  const data = parseCSVData(base64Data);
 
   // First row contains headers
-  var headers = data[0];
+  const headers = data[0];
 
   // Find indices of the specific columns
-  var salePricePerShareIndex = headers.indexOf('Sale Price Per Share');
-  var sharesSoldIndex = headers.indexOf('Shares Sold');
-  var brokerageCommissionIndex = headers.indexOf('Brokerage Commission');
-  var supplementalTransactionFeeIndex = headers.indexOf('Supplemental Transaction Fee');
-  var saleDateIndex = headers.indexOf('Sale Date');
+  const salePricePerShareIndex = headers.indexOf('Sale Price Per Share');
+  const sharesSoldIndex = headers.indexOf('Shares Sold');
+  const brokerageCommissionIndex = headers.indexOf('Brokerage Commission');
+  const supplementalTransactionFeeIndex = headers.indexOf('Supplemental Transaction Fee');
+  const saleDateIndex = headers.indexOf('Sale Date');
 
   // Extract data rows, excluding the last summary/totals row
-  var dataRows = data.slice(1).filter(function(row) {
+  const dataRows = data.slice(1).filter(function(row) {
     return row[saleDateIndex] && row[saleDateIndex].trim() !== '';
   });
 
-  var extractedData = dataRows.map(function(row) {
+  const extractedData = dataRows.map(function(row) {
     return {
       saleDate: row[saleDateIndex],
       sharesSold: parseInt(row[sharesSoldIndex], 10),
@@ -51,7 +50,7 @@ function buildReportForRsuShareworks(base64Data) {
 function formatMonetaryValue(value, currency) {
   if (typeof value === 'string' && value.startsWith('$') && value.length > 1) {
     // Remove '$' and commas before parsing (e.g. "$5,391.60" -> 5391.60)
-    var amount = parseFloat(value.substring(1).replace(/,/g, ''));
+    const amount = parseFloat(value.substring(1).replace(/,/g, ''));
     return {
       currency: (currency && currency.trim()) || 'USD',
       amount: amount
