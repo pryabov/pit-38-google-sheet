@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    /* Style for the loading indicator */
+    #loadingIndicator {
+      display: none; /* Initially hidden */
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    /* Style for the error message */
+    #errorMessage {
+      display: none; /* Initially hidden */
+      margin-top: 10px;
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <form id="fileForm">
+    <input type="file" id="fileInput" accept="*/*">
+    <input type="button" id="uploadButton" value="Upload" onclick="uploadFile()">
+  </form>
+  <div id="loadingIndicator">Loading, please wait...</div>
+  <div id="errorMessage"></div>
+  <script>
+    function uploadFile() {
+      var fileInput = document.getElementById('fileInput');
+      var uploadButton = document.getElementById('uploadButton');
+      var loadingIndicator = document.getElementById('loadingIndicator');
+      var errorMessage = document.getElementById('errorMessage');
+      var file = fileInput.files[0];
+      if (file) {
+        // Clear any previous error messages
+        errorMessage.style.display = 'none';
+        errorMessage.textContent = '';
+        // Show the loading indicator
+        loadingIndicator.style.display = 'block';
+        // Disable the form elements
+        fileInput.disabled = true;
+        uploadButton.disabled = true;
+
+        var reader = new FileReader();
+        reader.onload = function(event) {
+          var base64Data = event.target.result.split(',')[1]; // Extract the base64 part
+          var fileName = file.name;
+          // Send the base64 data and file name to the server-side script
+          google.script.run
+            .withSuccessHandler(onSuccess)
+            .withFailureHandler(onFailure)
+            .processFile(fileName, base64Data);
+        };
+        // Read the file as a data URL
+        reader.readAsDataURL(file);
+      } else {
+        console.error("No file selected");
+        errorMessage.style.display = 'block';
+        errorMessage.textContent = 'Please select a file to upload.';
+      }
+    }
+
+    function onSuccess(response) {
+      console.log("File processed successfully:", response);
+      // Hide the loading indicator
+      document.getElementById('loadingIndicator').style.display = 'none';
+      // Optionally clear the error message
+      document.getElementById('errorMessage').style.display = 'none';
+      document.getElementById('errorMessage').textContent = '';
+      // Close the popup window
+      google.script.host.close();
+    }
+
+    function onFailure(error) {
+      console.error("Error processing file:", error);
+      // Hide the loading indicator
+      document.getElementById('loadingIndicator').style.display = 'none';
+      // Display the error message
+      var errorMessage = document.getElementById('errorMessage');
+      errorMessage.style.display = 'block';
+      errorMessage.textContent = 'There was an error processing your file. Please try again.';
+    }
+  </script>
+</body>
+</html>
