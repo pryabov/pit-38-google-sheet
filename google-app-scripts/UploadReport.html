@@ -20,7 +20,7 @@
 </head>
 <body>
   <form id="fileForm">
-    <input type="file" id="fileInput" accept="*/*">
+    <input type="file" id="fileInput" accept=".csv">
     <input type="button" id="uploadButton" value="Upload" onclick="uploadFile()">
   </form>
   <div id="loadingIndicator">Loading, please wait...</div>
@@ -61,25 +61,28 @@
       }
     }
 
-    function onSuccess(response) {
-      console.log("File processed successfully:", response);
-      // Hide the loading indicator
+    function onSuccess(message) {
       document.getElementById('loadingIndicator').style.display = 'none';
-      // Optionally clear the error message
-      document.getElementById('errorMessage').style.display = 'none';
-      document.getElementById('errorMessage').textContent = '';
-      // Close the popup window
-      google.script.host.close();
+      if (message) {
+        var msgDiv = document.getElementById('errorMessage');
+        msgDiv.style.display = 'block';
+        msgDiv.style.color = 'green';
+        msgDiv.textContent = message;
+        setTimeout(function() { google.script.host.close(); }, 2000);
+      } else {
+        google.script.host.close();
+      }
     }
 
     function onFailure(error) {
-      console.error("Error processing file:", error);
-      // Hide the loading indicator
       document.getElementById('loadingIndicator').style.display = 'none';
-      // Display the error message
-      var errorMessage = document.getElementById('errorMessage');
-      errorMessage.style.display = 'block';
-      errorMessage.textContent = 'There was an error processing your file. Please try again.';
+      // Re-enable form elements
+      document.getElementById('fileInput').disabled = false;
+      document.getElementById('uploadButton').disabled = false;
+      var msgDiv = document.getElementById('errorMessage');
+      msgDiv.style.display = 'block';
+      msgDiv.style.color = 'red';
+      msgDiv.textContent = error.message || 'There was an error processing your file. Please try again.';
     }
   </script>
 </body>

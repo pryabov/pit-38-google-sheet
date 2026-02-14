@@ -8,8 +8,7 @@
 function processFile(fileName, base64Data) {
   try {
     const reportObject = buildReportForRsuShareworks(base64Data);
-
-    writeDataToSheet(reportObject);
+    return writeDataToSheet(reportObject);
   } catch (error) {
     Logger.log('Error processing file: ' + error.toString());
     throw new Error('Failed to process file: ' + error.toString());
@@ -75,9 +74,11 @@ function writeDataToSheet(reportObject) {
     return !existingKeys.has(key);
   });
 
+  const skippedCount = reportObject.length - newRows.length;
+
   if (newRows.length === 0) {
     Logger.log('No new transactions to add (all duplicates).');
-    return;
+    return 'No new transactions added (' + skippedCount + ' duplicates skipped).';
   }
 
   // Find the first empty row in column B
@@ -86,7 +87,7 @@ function writeDataToSheet(reportObject) {
     filledRowsCount++;
   }
 
-  Logger.log('Adding ' + newRows.length + ' new transactions (skipped ' + (reportObject.length - newRows.length) + ' duplicates).');
+  Logger.log('Adding ' + newRows.length + ' new transactions (skipped ' + skippedCount + ' duplicates).');
 
   for (let i = 0; i < newRows.length; i++) {
     const row = filledRowsCount + i;
@@ -107,4 +108,6 @@ function writeDataToSheet(reportObject) {
     sheet.getRange('K' + row).setValue(totalFees);
     sheet.getRange('L' + row).setValue(reportRow.brokerageCommission.currency);
   }
+
+  return 'Added ' + newRows.length + ' transactions' + (skippedCount > 0 ? ' (' + skippedCount + ' duplicates skipped).' : '.');
 }
