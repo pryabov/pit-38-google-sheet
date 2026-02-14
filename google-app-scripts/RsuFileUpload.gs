@@ -28,9 +28,10 @@ function showUploadReportDialog() {
 
 /**
  * Writes parsed RSU transaction data to the FIFO Stocks Transactions sheet.
- * Appends rows starting from the first empty row in column B.
+ * Skips duplicate transactions and appends new rows starting from the first empty row.
  *
  * @param {Object[]} reportObject - Array of parsed transaction objects from buildReportForRsuShareworks.
+ * @returns {string} Status message with count of added and skipped transactions.
  */
 function writeDataToSheet(reportObject) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
