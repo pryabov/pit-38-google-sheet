@@ -5,7 +5,7 @@ function calculate() {
 
   var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
 
-  var settingsSheet = spreadsheet.getSheetByName('Settings');
+  var settingsSheet = spreadsheet.getSheetByName(SETTINGS_SHEET_NAME);
   var calculationYear = +settingsSheet.getRange('B2').getValue();
 
   var calcLog = [];
@@ -25,14 +25,14 @@ function processCalcLog(spreadsheet, calcLog) {
   });
 
   if (calcLog.length > 0) {
-    var logSheet = spreadsheet.getSheetByName('Calculation Log') || spreadsheet.insertSheet('Calculation Log');
+    var logSheet = spreadsheet.getSheetByName(CALC_LOG_SHEET_NAME) || spreadsheet.insertSheet(CALC_LOG_SHEET_NAME);
     logSheet.clear();
     logSheet.getRange(1, 1, calcLog.length, 1).setValues(calcLog.map(entry => [entry]));
   }
 }
 
 function calculateFifo(spreadsheet, calculationYear, calcLog) {
-  var sheet = spreadsheet.getSheetByName('FIFO Stocks Transactions');
+  var sheet = spreadsheet.getSheetByName(FIFO_SHEET_NAME);
 
   var inMemoryFifo = new Map();
 
@@ -52,7 +52,7 @@ function calculateFifo(spreadsheet, calculationYear, calcLog) {
     if (transactionYear <= calculationYear) {
         var transaction = {
           date: transactionDate,
-          operationType: sheet.getRange(`E${i}`).getValue() === 'Kupowanie' ? 'Buy' : 'Sell',
+          operationType: sheet.getRange(`E${i}`).getValue() === BUY_OPERATION ? 'Buy' : 'Sell',
           count: sheet.getRange(`G${i}`).getValue(),
           price: sheet.getRange(`H${i}`).getValue(),
           currency: sheet.getRange(`J${i}`).getValue(),
@@ -132,13 +132,13 @@ function calculateFifo(spreadsheet, calculationYear, calcLog) {
     });
   });
 
-  var reportSheet = spreadsheet.getSheetByName('Report') || spreadsheet.insertSheet('Report');
+  var reportSheet = spreadsheet.getSheetByName(REPORT_SHEET_NAME) || spreadsheet.insertSheet(REPORT_SHEET_NAME);
   reportSheet.getRange('A4').setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
   reportSheet.getRange('B4').setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
 }
 
 function calculateCrypto(spreadsheet, calculationYear, calcLog) {
-  var sheet = spreadsheet.getSheetByName('Crypto Currencies');
+  var sheet = spreadsheet.getSheetByName(CRYPTO_SHEET_NAME);
 
   var inMemoryCrypto = [];
 
@@ -157,7 +157,7 @@ function calculateCrypto(spreadsheet, calculationYear, calcLog) {
       var transaction = {
         rowNumber: i,
         date: transactionDate,
-        operationType: sheet.getRange(`E${i}`).getValue() === 'Kupowanie' ? 'Buy' : 'Sell',
+        operationType: sheet.getRange(`E${i}`).getValue() === BUY_OPERATION ? 'Buy' : 'Sell',
         amount: sheet.getRange(`I${i}`).getValue(),
         currency: sheet.getRange(`J${i}`).getValue(),
         costs: sheet.getRange(`K${i}`).getValue(),
@@ -191,13 +191,13 @@ function calculateCrypto(spreadsheet, calculationYear, calcLog) {
   }
 
   // Optionally, write the results to a sheet named 'Crypto Report'
-  var reportSheet = spreadsheet.getSheetByName('Report') || spreadsheet.insertSheet('Report');
+  var reportSheet = spreadsheet.getSheetByName(REPORT_SHEET_NAME) || spreadsheet.insertSheet(REPORT_SHEET_NAME);
   reportSheet.getRange('D4').setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
   reportSheet.getRange('E4').setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
 }
 
 function calculateDividends(spreadsheet, calculationYear, calcLog) {
-  var sheet = spreadsheet.getSheetByName('Dividends');
+  var sheet = spreadsheet.getSheetByName(DIVIDENDS_SHEET_NAME);
 
   var inMemoryDividends = [];
 
@@ -243,7 +243,7 @@ function calculateDividends(spreadsheet, calculationYear, calcLog) {
   }
 
   // Optionally, write the results to a sheet named 'Crypto Report'
-  var reportSheet = spreadsheet.getSheetByName('Report') || spreadsheet.insertSheet('Report');
+  var reportSheet = spreadsheet.getSheetByName(REPORT_SHEET_NAME) || spreadsheet.insertSheet(REPORT_SHEET_NAME);
   reportSheet.getRange('G4').setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
   reportSheet.getRange('H4').setFormula(`=ROUND(${totalTransactionsCostAccumulated}, 2)`);
 }
@@ -251,9 +251,9 @@ function calculateDividends(spreadsheet, calculationYear, calcLog) {
 function setPreviousWorkingDayRate() {
   const nbpRates = getNbpRates();
 
-  setPreviousWorkingDayWithParams('FIFO Stocks Transactions', nbpRates, 'F', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P');
-  setPreviousWorkingDayWithParams('Crypto Currencies', nbpRates, 'F', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P');
-  setPreviousWorkingDayWithParams('Dividends', nbpRates, 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M');
+  setPreviousWorkingDayWithParams(FIFO_SHEET_NAME, nbpRates, 'F', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P');
+  setPreviousWorkingDayWithParams(CRYPTO_SHEET_NAME, nbpRates, 'F', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P');
+  setPreviousWorkingDayWithParams(DIVIDENDS_SHEET_NAME, nbpRates, 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M');
 }
 
 function setPreviousWorkingDayWithParams(

@@ -16,44 +16,41 @@ function showUploadReportDialog() {
     .setHeight(300); // Set the height of the dialog
   // Show the modal dialog with a custom title
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Upload RSU Shareworks Report CSV');
-
-  // htmlOutput.setTitle('Your Sidebar Title Here');
-  // SpreadsheetApp.getUi().showSidebar(htmlOutput);
 }
 
 function writeDataToSheet(reportObject) {
-  // Get the active spreadsheet
   var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = spreadsheet.getSheetByName('FIFO Stocks Transactions');
+  var sheetName = FIFO_SHEET_NAME;
+  var sheet = spreadsheet.getSheetByName(sheetName);
 
   if (!sheet) {
     throw new Error('Sheet with name "' + sheetName + '" not found.');
   }
 
-  let filledRowsCount = 1;
-  while (sheet.getRange(`B${filledRowsCount}`).getValue() && filledRowsCount < 10000) {
+  // Find the first empty row in column B
+  var filledRowsCount = 1;
+  while (sheet.getRange('B' + filledRowsCount).getValue() && filledRowsCount < 10000) {
     filledRowsCount++;
   }
-  Logger.log('FilledRows:' + filledRowsCount)
+  Logger.log('First empty row: ' + filledRowsCount);
 
-  // Set each value in the spreadsheet individually
-  for (var i = filledRowsCount; i < reportObject.length + filledRowsCount - 1; i++) {
-    let reportRow = reportObject[i - filledRowsCount];
+  for (var i = 0; i < reportObject.length; i++) {
+    var row = filledRowsCount + i;
+    var reportRow = reportObject[i];
+    var totalFees = reportRow.brokerageCommission.amount + reportRow.supplementalTransactionFee.amount;
 
-    // sheet.getRange(i + filledRowsCount, 1).setValue(i + filledRowsCount - 1);
+    sheet.getRange('B' + row).setValue('TEAM');
+    sheet.getRange('C' + row).setValue('Inna');
+    sheet.getRange('D' + row).setValue('Stany Zjednoczone Ameryki');
+    sheet.getRange('E' + row).setValue('Sprzedaż');
 
-    sheet.getRange(`B${i}`).setValue('TEAM')
-    sheet.getRange(`C${i}`).setValue('Inna')
-    sheet.getRange(`D${i}`).setValue('Stany Zjednoczone Ameryki')
-    sheet.getRange(`E${i}`).setValue('Sprzedaż')
+    sheet.getRange('F' + row).setValue(reportRow.saleDate);
+    sheet.getRange('G' + row).setValue(reportRow.sharesSold);
+    sheet.getRange('H' + row).setValue(reportRow.salePrice.amount);
+    sheet.getRange('I' + row).setFormula('=G' + row + '*H' + row);
+    sheet.getRange('J' + row).setValue(reportRow.salePrice.currency);
 
-    sheet.getRange(`F${i}`).setValue(reportRow.saleDate)
-    sheet.getRange(`G${i}`).setValue(reportRow.sharesSold)
-    sheet.getRange(`H${i}`).setValue(reportRow.salePrice.amount)
-    sheet.getRange(`I${i}`).setFormula(`=G${i}*H${i}`)
-    sheet.getRange(`J${i}`).setValue(reportRow.salePrice.currency)
-
-    sheet.getRange(`K${i}`).setFormula(`=${reportRow.brokerageCommission.amount} + ${reportRow.supplementalTransactionFee.amount}`)
-    sheet.getRange(`L${i}`).setValue(reportRow.brokerageCommission.currency)
+    sheet.getRange('K' + row).setValue(totalFees);
+    sheet.getRange('L' + row).setValue(reportRow.brokerageCommission.currency);
   }
 }

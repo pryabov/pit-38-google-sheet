@@ -1,3 +1,11 @@
+var FIFO_SHEET_NAME = 'FIFO Stocks Transactions';
+var CRYPTO_SHEET_NAME = 'Crypto Currencies';
+var DIVIDENDS_SHEET_NAME = 'Dividends';
+var SETTINGS_SHEET_NAME = 'Settings';
+var REPORT_SHEET_NAME = 'Report';
+var CALC_LOG_SHEET_NAME = 'Calculation Log';
+var BUY_OPERATION = 'Kupowanie';
+
 function parseCSVData(base64Data) {
   // Decode the base64 data
   var decodedBytes = Utilities.base64Decode(base64Data);
