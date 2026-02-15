@@ -1,23 +1,36 @@
 /**
  * Main entry point for PIT-38 tax calculation.
  * Fetches NBP exchange rates, then calculates FIFO stocks, crypto, and dividends
- * for the year specified in the Settings sheet.
+ * for the year specified in the "Home Page" sheet.
  */
 function calculate() {
   setPreviousWorkingDayRate();
 
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
 
-  const settingsSheet = spreadsheet.getSheetByName(SETTINGS_SHEET_NAME);
-  const calculationYear = +settingsSheet.getRange('B2').getValue();
+  const homePageSheet = spreadsheet.getSheetByName(HOME_PAGE_SHEET_NAME);
+  const calculationYear = +homePageSheet.getRange('H16').getValue();
 
   const reportSheet = spreadsheet.getSheetByName(REPORT_SHEET_NAME) || spreadsheet.insertSheet(REPORT_SHEET_NAME);
+  reportSheet.clear();
 
   const calcLog = [];
 
-  calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet);
-  calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet);
-  calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet);
+  // FIFO Stocks section
+  reportSheet.getRange('A3').setValue('Akcje (FIFO)');
+  const fifoCountryRows = calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet);
+
+  // Crypto section
+  const cryptoHeaderRow = REPORT_FIFO_START_ROW + Math.max(fifoCountryRows, 0) + 1;
+  reportSheet.getRange('A' + cryptoHeaderRow).setValue('Kryptowaluty');
+  const cryptoStartRow = cryptoHeaderRow + 1;
+  const cryptoCountryRows = calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet, cryptoStartRow);
+
+  // Dividends section
+  const divHeaderRow = cryptoStartRow + Math.max(cryptoCountryRows, 0) + 1;
+  reportSheet.getRange('A' + divHeaderRow).setValue('Dywidendy');
+  const divStartRow = divHeaderRow + 1;
+  calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet, divStartRow);
 
   processCalcLog(spreadsheet, calcLog);
 
@@ -43,9 +56,11 @@ function processCalcLog(spreadsheet, calcLog) {
 }
 
 /**
- * Calculates FIFO-based gains/losses for stock transactions.
+ * Calculates FIFO-based gains/losses for stock transactions, grouped by country.
  * Loads all transactions up to calculationYear to build the buy queue,
  * but only accumulates revenue/cost for sells in the calculation year.
+ *
+ * @returns {number} Number of country rows written to the report sheet.
  */
 function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
   const sheet = spreadsheet.getSheetByName(FIFO_SHEET_NAME);
@@ -69,7 +84,8 @@ function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
         price: row[FIFO_COL.price.index],
         currency: row[FIFO_COL.currency.index],
         costs: row[FIFO_COL.costs.index],
-        exchangeRate: row[FIFO_COL.exchangeRate.index]
+        exchangeRate: row[FIFO_COL.exchangeRate.index],
+        country: row[FIFO_COL.country.index] || ''
       };
 
       if (!inMemoryFifo.has(currentSymbol)) {
@@ -84,10 +100,8 @@ function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
     transactions.sort((a, b) => a.date - b.date);
   });
 
-  // Phase 3: FIFO Calculation
-  let totalRevenueAccumulated = 0;
-  let totalCostAccumulated = 0;
-  let totalTransactionsCostAccumulated = 0;
+  // Phase 3: FIFO Calculation grouped by country
+  const countryTotals = new Map();
 
   inMemoryFifo.forEach((transactions, symbol) => {
     const buyQueue = [];
@@ -110,7 +124,7 @@ function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
             totalTransactionCost += buyTransaction.costs * buyTransaction.exchangeRate;
 
             remainingToSell -= buyTransaction.count;
-            sellDetails.push(`Sold ${buyTransaction.count} shares bought on ${buyTransaction.date.toDateString()} at ${buyTransaction.price} ${buyTransaction.currency} (Cost: ${cost.toFixed(2)} PLN, Transaction Cost: ${(buyTransaction.costs * buyTransaction.exchangeRate).toFixed(2)} PLN)`);
+            sellDetails.push(`Sold ${buyTransaction.count} shares bought on ${buyTransaction.date.toDateString()} at ${buyTransaction.price} ${buyTransaction.currency} (Cost: ${cost.toFixed(2)} ${CURRENCIES.PLN}, Transaction Cost: ${(buyTransaction.costs * buyTransaction.exchangeRate).toFixed(2)} ${CURRENCIES.PLN})`);
             buyQueue.shift();
           } else {
             const partialCost = remainingToSell * buyTransaction.price * buyTransaction.exchangeRate;
@@ -119,7 +133,7 @@ function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
             totalCost += partialCost;
             totalTransactionCost += partialTransactionCost;
 
-            sellDetails.push(`Sold ${remainingToSell} shares bought on ${buyTransaction.date.toDateString()} at ${buyTransaction.price} ${buyTransaction.currency} (Cost: ${partialCost.toFixed(2)} PLN, Transaction Cost: ${partialTransactionCost.toFixed(2)} PLN)`);
+            sellDetails.push(`Sold ${remainingToSell} shares bought on ${buyTransaction.date.toDateString()} at ${buyTransaction.price} ${buyTransaction.currency} (Cost: ${partialCost.toFixed(2)} ${CURRENCIES.PLN}, Transaction Cost: ${partialTransactionCost.toFixed(2)} ${CURRENCIES.PLN})`);
 
             const originalCount = buyTransaction.count;
             buyTransaction.count -= remainingToSell;
@@ -133,36 +147,50 @@ function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
           const totalRevenue = transaction.count * transaction.price * transaction.exchangeRate;
           const gainOrLoss = totalRevenue - totalCost - totalTransactionCost;
 
-          totalRevenueAccumulated += totalRevenue;
-          totalCostAccumulated += totalCost;
-          totalTransactionsCostAccumulated += totalTransactionCost;
+          const country = transaction.country || 'Nieznany';
+          if (!countryTotals.has(country)) {
+            countryTotals.set(country, { revenue: 0, cost: 0, transactionCost: 0 });
+          }
+          const totals = countryTotals.get(country);
+          totals.revenue += totalRevenue;
+          totals.cost += totalCost;
+          totals.transactionCost += totalTransactionCost;
 
-          calcLog.push(`Sold ${transaction.count} shares of ${symbol} on ${transaction.date.toDateString()}:`);
+          calcLog.push(`[${country}] Sold ${transaction.count} shares of ${symbol} on ${transaction.date.toDateString()}:`);
           calcLog.push(...sellDetails);
-          calcLog.push(`Total Revenue: ${totalRevenue.toFixed(2)} PLN`);
-          calcLog.push(`Total Cost: ${totalCost.toFixed(2)} PLN`);
-          calcLog.push(`Total Transaction Cost: ${totalTransactionCost.toFixed(2)} PLN`);
-          calcLog.push(`Gain/Loss: ${gainOrLoss.toFixed(2)} PLN`);
+          calcLog.push(`Total Revenue: ${totalRevenue.toFixed(2)} ${CURRENCIES.PLN}`);
+          calcLog.push(`Total Cost: ${totalCost.toFixed(2)} ${CURRENCIES.PLN}`);
+          calcLog.push(`Total Transaction Cost: ${totalTransactionCost.toFixed(2)} ${CURRENCIES.PLN}`);
+          calcLog.push(`Gain/Loss: ${gainOrLoss.toFixed(2)} ${CURRENCIES.PLN}`);
           calcLog.push('---');
         }
       }
     });
   });
 
-  reportSheet.getRange(REPORT_CELLS.fifoRevenue).setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
-  reportSheet.getRange(REPORT_CELLS.fifoCost).setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
+  // Write per-country rows to report
+  const countries = Array.from(countryTotals.keys()).sort();
+  countries.forEach((country, idx) => {
+    const row = REPORT_FIFO_START_ROW + idx;
+    const totals = countryTotals.get(country);
+    reportSheet.getRange(REPORT_FIFO_COUNTRY_COL + row).setValue(country);
+    reportSheet.getRange(REPORT_FIFO_REVENUE_COL + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
+    reportSheet.getRange(REPORT_FIFO_COST_COL + row).setFormula(`=ROUND(${totals.cost + totals.transactionCost}, 2)`);
+  });
+
+  return countries.length;
 }
 
 /**
- * Calculates crypto transaction totals for the given year.
- * Revenue from sells and costs from buys are accumulated separately.
+ * Calculates crypto transaction totals for the given year, grouped by country.
+ * Revenue from sells and costs from buys are accumulated separately per country.
+ *
+ * @returns {number} Number of country rows written to the report sheet.
  */
-function calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet) {
+function calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet, reportRow) {
   const sheet = spreadsheet.getSheetByName(CRYPTO_SHEET_NAME);
   const allData = sheet.getDataRange().getValues();
-  let totalRevenueAccumulated = 0;
-  let totalCostAccumulated = 0;
-  let totalTransactionsCostAccumulated = 0;
+  const countryTotals = new Map();
 
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
@@ -177,39 +205,54 @@ function calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet) {
       const currency = row[CRYPTO_COL.currency.index];
       const costs = row[CRYPTO_COL.costs.index];
       const exchangeRate = row[CRYPTO_COL.exchangeRate.index];
+      const country = row[CRYPTO_COL.country.index] || 'Nieznany';
 
       const transactionCostPLN = costs * exchangeRate;
       const amountPLN = amount * exchangeRate;
 
+      if (!countryTotals.has(country)) {
+        countryTotals.set(country, { revenue: 0, cost: 0, transactionCost: 0 });
+      }
+      const totals = countryTotals.get(country);
+
       if (operationType === 'Sell') {
-        totalRevenueAccumulated += amountPLN;
+        totals.revenue += amountPLN;
       } else if (operationType === 'Buy') {
-        totalCostAccumulated += amountPLN;
+        totals.cost += amountPLN;
       }
 
-      totalTransactionsCostAccumulated += transactionCostPLN;
+      totals.transactionCost += transactionCostPLN;
 
-      calcLog.push(`Crypto Transaction ${operationType} ${amount} ${currency} on ${transactionDate.toDateString()}:`);
+      calcLog.push(`[${country}] Crypto Transaction ${operationType} ${amount} ${currency} on ${transactionDate.toDateString()}:`);
       calcLog.push(`Amount: ${amount}`);
       calcLog.push(`Exchange Rate: ${exchangeRate}`);
-      calcLog.push(`Transaction Cost: ${transactionCostPLN.toFixed(2)} PLN`);
-      calcLog.push(`Total Revenue: ${amountPLN.toFixed(2)} PLN`);
+      calcLog.push(`Transaction Cost: ${transactionCostPLN.toFixed(2)} ${CURRENCIES.PLN}`);
+      calcLog.push(`Total Revenue: ${amountPLN.toFixed(2)} ${CURRENCIES.PLN}`);
       calcLog.push('---');
     }
   }
 
-  reportSheet.getRange(REPORT_CELLS.cryptoRevenue).setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
-  reportSheet.getRange(REPORT_CELLS.cryptoCost).setFormula(`=ROUND(${totalCostAccumulated}+${totalTransactionsCostAccumulated}, 2)`);
+  const countries = Array.from(countryTotals.keys()).sort();
+  countries.forEach((country, idx) => {
+    const row = reportRow + idx;
+    const totals = countryTotals.get(country);
+    reportSheet.getRange('A' + row).setValue(country);
+    reportSheet.getRange('B' + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
+    reportSheet.getRange('C' + row).setFormula(`=ROUND(${totals.cost + totals.transactionCost}, 2)`);
+  });
+
+  return countries.length;
 }
 
 /**
- * Calculates dividend totals for the given year.
+ * Calculates dividend totals for the given year, grouped by country.
+ *
+ * @returns {number} Number of country rows written to the report sheet.
  */
-function calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet) {
+function calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet, reportRow) {
   const sheet = spreadsheet.getSheetByName(DIVIDENDS_SHEET_NAME);
   const allData = sheet.getDataRange().getValues();
-  let totalRevenueAccumulated = 0;
-  let totalTransactionsCostAccumulated = 0;
+  const countryTotals = new Map();
 
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
@@ -223,24 +266,37 @@ function calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet) 
       const currency = row[DIVIDENDS_COL.currency.index];
       const costs = row[DIVIDENDS_COL.costs.index];
       const exchangeRate = row[DIVIDENDS_COL.exchangeRate.index];
+      const country = row[DIVIDENDS_COL.country.index] || 'Nieznany';
 
       const transactionCostPLN = costs * exchangeRate;
       const amountPLN = amount * exchangeRate;
 
-      totalRevenueAccumulated += amountPLN;
-      totalTransactionsCostAccumulated += transactionCostPLN;
+      if (!countryTotals.has(country)) {
+        countryTotals.set(country, { revenue: 0, transactionCost: 0 });
+      }
+      const totals = countryTotals.get(country);
+      totals.revenue += amountPLN;
+      totals.transactionCost += transactionCostPLN;
 
-      calcLog.push(`Dividends Transaction ${amount} ${currency} on ${transactionDate.toDateString()}:`);
+      calcLog.push(`[${country}] Dividends Transaction ${amount} ${currency} on ${transactionDate.toDateString()}:`);
       calcLog.push(`Amount: ${amount}`);
       calcLog.push(`Exchange Rate: ${exchangeRate}`);
-      calcLog.push(`Transaction Cost: ${transactionCostPLN.toFixed(2)} PLN`);
-      calcLog.push(`Total Revenue: ${amountPLN.toFixed(2)} PLN`);
+      calcLog.push(`Transaction Cost: ${transactionCostPLN.toFixed(2)} ${CURRENCIES.PLN}`);
+      calcLog.push(`Total Revenue: ${amountPLN.toFixed(2)} ${CURRENCIES.PLN}`);
       calcLog.push('---');
     }
   }
 
-  reportSheet.getRange(REPORT_CELLS.dividendsRevenue).setFormula(`=ROUND(${totalRevenueAccumulated}, 2)`);
-  reportSheet.getRange(REPORT_CELLS.dividendsCost).setFormula(`=ROUND(${totalTransactionsCostAccumulated}, 2)`);
+  const countries = Array.from(countryTotals.keys()).sort();
+  countries.forEach((country, idx) => {
+    const row = reportRow + idx;
+    const totals = countryTotals.get(country);
+    reportSheet.getRange('A' + row).setValue(country);
+    reportSheet.getRange('B' + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
+    reportSheet.getRange('C' + row).setFormula(`=ROUND(${totals.transactionCost}, 2)`);
+  });
+
+  return countries.length;
 }
 
 /**
@@ -294,7 +350,7 @@ function setPreviousWorkingDayWithParams(sheetName, nbpRates, col) {
     if (maxDepth > 0) {
       const formattedDate = formatDate(nbpRateDate);
       const currency = row[col.currency.index];
-      const rate = currency === 'PLN' ? 1 : nbpRates.get(formattedDate)[currency.toLowerCase()];
+      const rate = currency === CURRENCIES.PLN ? 1 : nbpRates.get(formattedDate)[currency.toLowerCase()];
       const rowNum = i + 1;
 
       updates.push({
