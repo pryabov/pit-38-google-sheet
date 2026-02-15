@@ -16,21 +16,20 @@ function calculate() {
 
   const calcLog = [];
 
-  // FIFO Stocks section
-  reportSheet.getRange('A3').setValue('Akcje (FIFO)');
+  // Write section headers (row 1)
+  writeReportHeader(reportSheet, REPORT_FIFO);
+  writeReportHeader(reportSheet, REPORT_CRYPTO);
+  writeReportHeader(reportSheet, REPORT_DIV);
+
+  // Calculate and write per-country rows side-by-side (starting row 2)
   const fifoCountryRows = calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet);
+  const cryptoCountryRows = calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet);
+  const dividendsCountryRows = calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet);
 
-  // Crypto section
-  const cryptoHeaderRow = REPORT_FIFO_START_ROW + Math.max(fifoCountryRows, 0) + 1;
-  reportSheet.getRange('A' + cryptoHeaderRow).setValue('Kryptowaluty');
-  const cryptoStartRow = cryptoHeaderRow + 1;
-  const cryptoCountryRows = calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet, cryptoStartRow);
-
-  // Dividends section
-  const divHeaderRow = cryptoStartRow + Math.max(cryptoCountryRows, 0) + 1;
-  reportSheet.getRange('A' + divHeaderRow).setValue('Dywidendy');
-  const divStartRow = divHeaderRow + 1;
-  calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet, divStartRow);
+  // Write SUM rows at the bottom of each section
+  writeReportSum(reportSheet, REPORT_FIFO, fifoCountryRows);
+  writeReportSum(reportSheet, REPORT_CRYPTO, cryptoCountryRows);
+  writeReportSum(reportSheet, REPORT_DIV, dividendsCountryRows);
 
   processCalcLog(spreadsheet, calcLog);
 
@@ -53,6 +52,20 @@ function processCalcLog(spreadsheet, calcLog) {
     logSheet.clear();
     logSheet.getRange(1, 1, calcLog.length, 1).setValues(calcLog.map(entry => [entry]));
   }
+}
+
+function writeReportHeader(reportSheet, section) {
+  reportSheet.getRange(section.countryCol + REPORT_HEADER_ROW).setValue(section.label);
+}
+
+function writeReportSum(reportSheet, section, countryRows) {
+  if (countryRows === 0) return;
+  const sumRow = REPORT_DATA_START_ROW + countryRows;
+  const firstRow = REPORT_DATA_START_ROW;
+  const lastRow = REPORT_DATA_START_ROW + countryRows - 1;
+  reportSheet.getRange(section.revenueCol + sumRow).setFormula(`=SUM(${section.revenueCol}${firstRow}:${section.revenueCol}${lastRow})`);
+  reportSheet.getRange(section.costCol + sumRow).setFormula(`=SUM(${section.costCol}${firstRow}:${section.costCol}${lastRow})`);
+  reportSheet.getRange(section.taxCol + sumRow).setFormula(`=SUM(${section.taxCol}${firstRow}:${section.taxCol}${lastRow})`);
 }
 
 /**
@@ -171,11 +184,12 @@ function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
   // Write per-country rows to report
   const countries = Array.from(countryTotals.keys()).sort();
   countries.forEach((country, idx) => {
-    const row = REPORT_FIFO_START_ROW + idx;
+    const row = REPORT_DATA_START_ROW + idx;
     const totals = countryTotals.get(country);
-    reportSheet.getRange(REPORT_FIFO_COUNTRY_COL + row).setValue(country);
-    reportSheet.getRange(REPORT_FIFO_REVENUE_COL + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
-    reportSheet.getRange(REPORT_FIFO_COST_COL + row).setFormula(`=ROUND(${totals.cost + totals.transactionCost}, 2)`);
+    reportSheet.getRange(REPORT_FIFO.countryCol + row).setValue(country);
+    reportSheet.getRange(REPORT_FIFO.revenueCol + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
+    reportSheet.getRange(REPORT_FIFO.costCol + row).setFormula(`=ROUND(${totals.cost + totals.transactionCost}, 2)`);
+    reportSheet.getRange(REPORT_FIFO.taxCol + row).setFormula(`=ROUND(MAX((${REPORT_FIFO.revenueCol}${row}-${REPORT_FIFO.costCol}${row})*${TAX_RATE},0), 2)`);
   });
 
   return countries.length;
@@ -187,7 +201,7 @@ function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
  *
  * @returns {number} Number of country rows written to the report sheet.
  */
-function calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet, reportRow) {
+function calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet) {
   const sheet = spreadsheet.getSheetByName(CRYPTO_SHEET_NAME);
   const allData = sheet.getDataRange().getValues();
   const countryTotals = new Map();
@@ -234,11 +248,12 @@ function calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet, rep
 
   const countries = Array.from(countryTotals.keys()).sort();
   countries.forEach((country, idx) => {
-    const row = reportRow + idx;
+    const row = REPORT_DATA_START_ROW + idx;
     const totals = countryTotals.get(country);
-    reportSheet.getRange('A' + row).setValue(country);
-    reportSheet.getRange('B' + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
-    reportSheet.getRange('C' + row).setFormula(`=ROUND(${totals.cost + totals.transactionCost}, 2)`);
+    reportSheet.getRange(REPORT_CRYPTO.countryCol + row).setValue(country);
+    reportSheet.getRange(REPORT_CRYPTO.revenueCol + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
+    reportSheet.getRange(REPORT_CRYPTO.costCol + row).setFormula(`=ROUND(${totals.cost + totals.transactionCost}, 2)`);
+    reportSheet.getRange(REPORT_CRYPTO.taxCol + row).setFormula(`=ROUND(MAX((${REPORT_CRYPTO.revenueCol}${row}-${REPORT_CRYPTO.costCol}${row})*${TAX_RATE},0), 2)`);
   });
 
   return countries.length;
@@ -249,7 +264,7 @@ function calculateCrypto(spreadsheet, calculationYear, calcLog, reportSheet, rep
  *
  * @returns {number} Number of country rows written to the report sheet.
  */
-function calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet, reportRow) {
+function calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet) {
   const sheet = spreadsheet.getSheetByName(DIVIDENDS_SHEET_NAME);
   const allData = sheet.getDataRange().getValues();
   const countryTotals = new Map();
@@ -289,11 +304,12 @@ function calculateDividends(spreadsheet, calculationYear, calcLog, reportSheet, 
 
   const countries = Array.from(countryTotals.keys()).sort();
   countries.forEach((country, idx) => {
-    const row = reportRow + idx;
+    const row = REPORT_DATA_START_ROW + idx;
     const totals = countryTotals.get(country);
-    reportSheet.getRange('A' + row).setValue(country);
-    reportSheet.getRange('B' + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
-    reportSheet.getRange('C' + row).setFormula(`=ROUND(${totals.transactionCost}, 2)`);
+    reportSheet.getRange(REPORT_DIV.countryCol + row).setValue(country);
+    reportSheet.getRange(REPORT_DIV.revenueCol + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
+    reportSheet.getRange(REPORT_DIV.costCol + row).setFormula(`=ROUND(${totals.transactionCost}, 2)`);
+    reportSheet.getRange(REPORT_DIV.taxCol + row).setFormula(`=ROUND(MAX((${REPORT_DIV.revenueCol}${row}-${REPORT_DIV.costCol}${row})*${TAX_RATE},0), 2)`);
   });
 
   return countries.length;

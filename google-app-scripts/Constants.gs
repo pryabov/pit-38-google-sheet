@@ -21,11 +21,16 @@ var RSU_SYMBOL = 'TEAM';
 var RSU_STOCK_TYPE = 'Inna';
 var RSU_COUNTRY = 'Stany Zjednoczone Ameryki';
 
-// Report sheet layout
-var REPORT_FIFO_START_ROW = 4;  // FIFO per-country rows start here
-var REPORT_FIFO_COUNTRY_COL = 'A';
-var REPORT_FIFO_REVENUE_COL = 'B';
-var REPORT_FIFO_COST_COL = 'C';
+// Tax rate
+var TAX_RATE = 0.19;
+
+// Report sheet layout — three side-by-side tables
+var REPORT_HEADER_ROW = 1;
+var REPORT_DATA_START_ROW = 2;
+
+var REPORT_FIFO    = { label: 'Akcje (FIFO)',   countryCol: 'A', revenueCol: 'B', costCol: 'C', taxCol: 'D' };
+var REPORT_CRYPTO  = { label: 'Kryptowaluty',   countryCol: 'F', revenueCol: 'G', costCol: 'H', taxCol: 'I' };
+var REPORT_DIV     = { label: 'Dywidendy',      countryCol: 'K', revenueCol: 'L', costCol: 'M', taxCol: 'N' };
 
 // Column mappings for batch-read arrays (.index) and getRange calls (.letter).
 // Usage: row[FIFO_COL.currency.index] or sheet.getRange(FIFO_COL.currency.letter + row)
