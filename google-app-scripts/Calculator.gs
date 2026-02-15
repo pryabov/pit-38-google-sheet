@@ -55,7 +55,20 @@ function processCalcLog(spreadsheet, calcLog) {
 }
 
 function writeReportHeader(reportSheet, section) {
-  reportSheet.getRange(section.countryCol + REPORT_HEADER_ROW).setValue(section.label);
+  const row = REPORT_HEADER_ROW;
+  const headers = [
+    { col: section.countryCol, value: section.label },
+    { col: section.revenueCol, value: REPORT_COL_LABELS.revenue },
+    { col: section.costCol,    value: REPORT_COL_LABELS.cost },
+    { col: section.taxCol,     value: REPORT_COL_LABELS.tax }
+  ];
+  headers.forEach(h => {
+    const cell = reportSheet.getRange(h.col + row);
+    cell.setValue(h.value);
+    cell.setBackground(REPORT_HEADER_COLOR);
+    cell.setFontColor(REPORT_HEADER_FONT_COLOR);
+    cell.setFontWeight('bold');
+  });
 }
 
 function writeReportSum(reportSheet, section, countryRows) {
@@ -63,6 +76,7 @@ function writeReportSum(reportSheet, section, countryRows) {
   const sumRow = REPORT_DATA_START_ROW + countryRows;
   const firstRow = REPORT_DATA_START_ROW;
   const lastRow = REPORT_DATA_START_ROW + countryRows - 1;
+  reportSheet.getRange(section.countryCol + sumRow).setValue(REPORT_SUM_LABEL);
   reportSheet.getRange(section.revenueCol + sumRow).setFormula(`=SUM(${section.revenueCol}${firstRow}:${section.revenueCol}${lastRow})`);
   reportSheet.getRange(section.costCol + sumRow).setFormula(`=SUM(${section.costCol}${firstRow}:${section.costCol}${lastRow})`);
   reportSheet.getRange(section.taxCol + sumRow).setFormula(`=SUM(${section.taxCol}${firstRow}:${section.taxCol}${lastRow})`);

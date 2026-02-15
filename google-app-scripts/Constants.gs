@@ -27,6 +27,10 @@ var TAX_RATE = 0.19;
 // Report sheet layout — three side-by-side tables
 var REPORT_HEADER_ROW = 1;
 var REPORT_DATA_START_ROW = 2;
+var REPORT_HEADER_COLOR = '#4472C4';
+var REPORT_HEADER_FONT_COLOR = '#FFFFFF';
+var REPORT_COL_LABELS = { country: 'Kraj', revenue: 'Przychód', cost: 'Koszt', tax: 'Podatek' };
+var REPORT_SUM_LABEL = 'Suma';
 
 var REPORT_FIFO    = { label: 'Akcje (FIFO)',   countryCol: 'A', revenueCol: 'B', costCol: 'C', taxCol: 'D' };
 var REPORT_CRYPTO  = { label: 'Kryptowaluty',   countryCol: 'F', revenueCol: 'G', costCol: 'H', taxCol: 'I' };
