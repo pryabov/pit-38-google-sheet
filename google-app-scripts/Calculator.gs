@@ -201,9 +201,9 @@ function calculateFifo(spreadsheet, calculationYear, calcLog, reportSheet) {
     const row = REPORT_DATA_START_ROW + idx;
     const totals = countryTotals.get(country);
     reportSheet.getRange(REPORT_FIFO.countryCol + row).setValue(country);
-    reportSheet.getRange(REPORT_FIFO.revenueCol + row).setFormula(`=ROUND(${totals.revenue}, 2)`);
-    reportSheet.getRange(REPORT_FIFO.costCol + row).setFormula(`=ROUND(${totals.cost + totals.transactionCost}, 2)`);
-    reportSheet.getRange(REPORT_FIFO.taxCol + row).setFormula(`=ROUND(MAX((${REPORT_FIFO.revenueCol}${row}-${REPORT_FIFO.costCol}${row})*${TAX_RATE},0), 2)`);
+    reportSheet.getRange(REPORT_FIFO.revenueCol + row).setFormula(`=${totals.revenue}`);
+    reportSheet.getRange(REPORT_FIFO.costCol + row).setFormula(`=${totals.cost + totals.transactionCost}`);
+    reportSheet.getRange(REPORT_FIFO.taxCol + row).setFormula(`=MAX((${REPORT_FIFO.revenueCol}${row}-${REPORT_FIFO.costCol}${row})*${TAX_RATE},0)`);
   });
 
   return countries.length;

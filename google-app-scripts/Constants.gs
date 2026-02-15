@@ -36,6 +36,14 @@ var REPORT_FIFO    = { label: 'Akcje (FIFO)',   countryCol: 'A', revenueCol: 'B'
 var REPORT_CRYPTO  = { label: 'Kryptowaluty',   countryCol: 'F', revenueCol: 'G', costCol: 'H', taxCol: 'I' };
 var REPORT_DIV     = { label: 'Dywidendy',      countryCol: 'K', revenueCol: 'L', costCol: 'M', taxCol: 'N' };
 
+// Shared transaction sheet headers (columns A through Q)
+var TRANSACTION_HEADERS = [
+  'Nr', 'Symbol', 'Gielda', 'Kraj', 'Typ Operacji', 'Data',
+  'Liczba Akcji', 'Cena', 'Całkowita kwota', 'Waluta Ceny',
+  'Prowizja', 'Waluta Prowizji', 'Data kursu', 'Kurs',
+  'Cena w PLN', 'Prowizja w PLN', 'Notes'
+];
+
 // Column mappings for batch-read arrays (.index) and getRange calls (.letter).
 // Usage: row[FIFO_COL.currency.index] or sheet.getRange(FIFO_COL.currency.letter + row)
 var FIFO_COL = {
